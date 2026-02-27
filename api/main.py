@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -173,3 +173,48 @@ def stats():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Parse state
+_parse_status: dict = {"running": False, "done": 0, "failed": 0, "total": 0, "error": None}
+
+
+@app.post("/api/admin/parse")
+async def trigger_parse(background_tasks: BackgroundTasks):
+    if _parse_status["running"]:
+        return {"status": "already_running", **_parse_status}
+
+    async def run_parse():
+        import asyncio
+        from src.parser.pipeline import parse_all
+        from src.storage.gcs_client import GCSClient as _GCS
+        from src.index.schema import get_connection
+
+        _parse_status["running"] = True
+        _parse_status["error"] = None
+        try:
+            gcs = _GCS()
+            all_objects = gcs.list_pdfs()
+            with get_connection() as conn:
+                done_names = {
+                    row[0] for row in conn.execute(
+                        "SELECT gcs_name FROM documents WHERE parse_status='done'"
+                    ).fetchall()
+                }
+            to_parse = [obj.name for obj in all_objects if obj.name not in done_names]
+            _parse_status["total"] = len(to_parse)
+            results = await parse_all(to_parse)
+            _parse_status["done"] = results["success"]
+            _parse_status["failed"] = results["failed"]
+        except Exception as e:
+            _parse_status["error"] = str(e)
+        finally:
+            _parse_status["running"] = False
+
+    background_tasks.add_task(run_parse)
+    return {"status": "started", "message": "Parsing started in background. Poll /api/parse-status to track progress."}
+
+
+@app.get("/api/parse-status")
+def parse_status():
+    return _parse_status
