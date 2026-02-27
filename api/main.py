@@ -2,10 +2,15 @@
 FastAPI backend for the Trend Analysis Bot.
 Run with: python3 -m uvicorn api.main:app --reload --port 8000
 """
+import asyncio
 import hashlib
+import json
+import logging
 import sys
 from collections import OrderedDict
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -14,6 +19,7 @@ from contextlib import asynccontextmanager
 
 import fastapi
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -170,6 +176,122 @@ def stats():
         "industries": s["industries"],
         "embeddings": get_vector_count(),
     }
+
+
+@app.post("/api/query-stream")
+async def query_stream(req: QueryRequest):
+    async def generate():
+        from src.index.reader import get_docs_by_gcs_names, search_by_text
+        from src.index.vector_store import get_vector_count, semantic_search
+        from src.query.answerer import answer_from_chunks, answer_question
+        from src.query.retriever import RetrievedDoc
+
+        loop = asyncio.get_event_loop()
+
+        def sse(data: dict) -> str:
+            return f"data: {json.dumps(data)}\n\n"
+
+        try:
+            # Fast path: cached context
+            if req.context_id and req.context_id in _chunk_cache:
+                cached_chunks = _chunk_cache[req.context_id]
+                yield sse({"type": "answering"})
+                result = await loop.run_in_executor(
+                    None, lambda: answer_from_chunks(question=req.question, all_chunks=cached_chunks)
+                )
+                sources = [{"gcs_name": "", "name": n, "industry": "", "topics": []} for n in result.sources]
+                yield sse({"type": "answer", "answer": result.answer, "sources": sources, "context_id": req.context_id})
+                return
+
+            # Step 1: search
+            yield sse({"type": "searching"})
+
+            if req.pinned_gcs_names:
+                rows = get_docs_by_gcs_names(req.pinned_gcs_names)
+                doc_data = [{"gcs_name": r.gcs_name, "doc_name": r.doc_name, "industry": r.industry,
+                             "market_scope": r.market_scope, "topics": r.topics, "forecasts": r.forecasts, "score": 1.0}
+                            for r in rows]
+            else:
+                industry_filter = req.industry_filter
+                if isinstance(industry_filter, str):
+                    industry_filter = [industry_filter] if industry_filter.lower() not in ("all", "any", "") else None
+                elif isinstance(industry_filter, list):
+                    industry_filter = [f for f in industry_filter if f.lower() not in ("all", "any", "")] or None
+
+                if get_vector_count() > 0:
+                    raw = await loop.run_in_executor(
+                        None, lambda: semantic_search(query=req.question, n_results=req.max_docs * 2)
+                    )
+                    if industry_filter:
+                        filtered = [r for r in raw if any(f.lower() in r["industry"].lower() for f in industry_filter)]
+                        raw = filtered or raw
+                    doc_data = [{"gcs_name": r["gcs_name"], "doc_name": r["doc_name"], "industry": r["industry"],
+                                 "market_scope": r["market_scope"], "topics": r["topics"], "forecasts": r["forecasts"],
+                                 "score": 1.0 - r["distance"]} for r in raw[:req.max_docs]]
+                else:
+                    fts = await loop.run_in_executor(None, lambda: search_by_text(req.question, limit=req.max_docs * 3))
+                    if industry_filter:
+                        fts = [r for r in fts if any(f.lower() in r.industry.lower() for f in industry_filter)] or fts
+                    doc_data = [{"gcs_name": r.gcs_name, "doc_name": r.doc_name, "industry": r.industry,
+                                 "market_scope": r.market_scope, "topics": r.topics, "forecasts": r.forecasts,
+                                 "score": r.score} for r in fts[:req.max_docs]]
+
+            total = len(doc_data)
+            yield sse({"type": "found", "total": total})
+
+            # Step 2: load each doc
+            docs: list[RetrievedDoc] = []
+            for i, r in enumerate(doc_data):
+                yield sse({"type": "loading", "index": i, "total": total,
+                           "doc": {"name": r["doc_name"], "industry": r["industry"]}})
+                try:
+                    local_path = await loop.run_in_executor(
+                        None, lambda gn=r["gcs_name"]: _gcs.download_pdf(gn)
+                    )
+                    docs.append(RetrievedDoc(
+                        gcs_name=r["gcs_name"], doc_name=r["doc_name"], industry=r["industry"],
+                        market_scope=r["market_scope"], topics=r["topics"], forecasts=r["forecasts"],
+                        local_path=local_path, score=r["score"],
+                    ))
+                except Exception as e:
+                    logger.warning(f"Could not load {r['gcs_name']}: {e}")
+
+            # Step 3: answer
+            yield sse({"type": "answering"})
+            result = await loop.run_in_executor(
+                None, lambda: answer_question(question=req.question, docs=docs)
+            )
+
+            gcs_names = [d.gcs_name for d in docs]
+            context_id = _make_context_id(gcs_names) if gcs_names else None
+            if context_id and result.all_chunks:
+                _cache_chunks(context_id, result.all_chunks)
+
+            doc_map = {d.doc_name: d for d in docs}
+            sources = []
+            for name in result.sources:
+                doc = doc_map.get(name)
+                url = None
+                if doc:
+                    try:
+                        url = _gcs.get_signed_url(doc.gcs_name)
+                    except Exception:
+                        pass
+                sources.append({"gcs_name": doc.gcs_name if doc else "", "name": name,
+                                 "industry": doc.industry if doc else "",
+                                 "topics": doc.topics[:4] if doc else [], "url": url})
+
+            yield sse({"type": "answer", "answer": result.answer, "sources": sources, "context_id": context_id})
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/health")

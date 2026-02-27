@@ -41,6 +41,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedRef = useRef(0);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -48,6 +49,9 @@ export default function Home() {
   const [followUpMsgId, setFollowUpMsgId] = useState<number | null>(null);
   const [followUpSources, setFollowUpSources] = useState<Source[]>([]);
   const [followUpContextId, setFollowUpContextId] = useState<string | null>(null);
+  const [loadingPhase, setLoadingPhase] = useState<"searching" | "loading" | "answering" | null>(null);
+  const [loadingDocs, setLoadingDocs] = useState<{ name: string; industry: string; done: boolean }[]>([]);
+  const [loadingTotal, setLoadingTotal] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -110,8 +114,12 @@ export default function Home() {
     setMessages((prev) => [...prev, { id: ++msgIdCounter, role: "user", content: q }]);
     setInput("");
     setElapsed(0);
+    elapsedRef.current = 0;
     setLoading(true);
-    timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    setLoadingPhase("searching");
+    setLoadingDocs([]);
+    setLoadingTotal(0);
+    timerRef.current = setInterval(() => setElapsed((s) => { elapsedRef.current = s + 1; return s + 1; }), 1000);
 
     try {
       const body: Record<string, unknown> = { question: q };
@@ -123,17 +131,49 @@ export default function Home() {
         body.industry_filter = selectedIndustries.length > 0 ? selectedIndustries : null;
       }
 
-      const res = await fetch(`${API}/api/query`, {
+      const res = await fetch(`${API}/api/query-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { id: ++msgIdCounter, role: "assistant", content: data.answer, sources: data.sources, context_id: data.context_id, elapsed },
-      ]);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "searching") {
+            setLoadingPhase("searching");
+          } else if (event.type === "found") {
+            setLoadingTotal(event.total);
+            setLoadingPhase("loading");
+          } else if (event.type === "loading") {
+            setLoadingDocs((prev) => [
+              ...prev.map((d, i) => i === prev.length - 1 ? { ...d, done: true } : d),
+              { ...event.doc, done: false },
+            ]);
+          } else if (event.type === "answering") {
+            setLoadingPhase("answering");
+            setLoadingDocs((prev) => prev.map((d) => ({ ...d, done: true })));
+          } else if (event.type === "answer") {
+            setMessages((prev) => [
+              ...prev,
+              { id: ++msgIdCounter, role: "assistant", content: event.answer, sources: event.sources, context_id: event.context_id, elapsed: elapsedRef.current },
+            ]);
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -142,6 +182,9 @@ export default function Home() {
     } finally {
       if (timerRef.current) clearInterval(timerRef.current);
       setLoading(false);
+      setLoadingPhase(null);
+      setLoadingDocs([]);
+      setLoadingTotal(0);
       textareaRef.current?.focus();
     }
   };
@@ -293,13 +336,52 @@ export default function Home() {
 
         {loading && (
           <div className="flex items-start mb-6">
-            <div className="bg-[#1C2B36] border border-[#243340] rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex gap-2 items-center h-4">
-                <span className="w-1.5 h-1.5 bg-[#D9FF00] rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-1.5 h-1.5 bg-[#D9FF00] rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-1.5 h-1.5 bg-[#D9FF00] rounded-full animate-bounce [animation-delay:300ms]" />
-                <span className="text-xs text-[#4A6070] tabular-nums ml-1">{elapsed}s</span>
+            <div className="bg-[#1C2B36] border border-[#243340] rounded-2xl rounded-bl-sm px-4 py-3 w-full max-w-[80%]">
+              {/* Phase label + timer */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-[#D9FF00] rounded-full animate-pulse" />
+                  <span className="text-xs text-[#7B92A5]">
+                    {loadingPhase === "searching" && "Searching reports…"}
+                    {loadingPhase === "loading" && `Loading documents… (${loadingDocs.length}/${loadingTotal})`}
+                    {loadingPhase === "answering" && "Synthesizing answer…"}
+                    {!loadingPhase && "Working…"}
+                  </span>
+                </div>
+                <span className="text-xs text-[#4A6070] tabular-nums">{elapsed}s</span>
               </div>
+
+              {/* Progress bar */}
+              {loadingPhase === "loading" && loadingTotal > 0 && (
+                <div className="h-1 w-full bg-[#243340] rounded-full mb-2 overflow-hidden">
+                  <div
+                    className="h-full bg-[#D9FF00] rounded-full transition-all duration-300"
+                    style={{ width: `${Math.round((loadingDocs.length / loadingTotal) * 100)}%` }}
+                  />
+                </div>
+              )}
+
+              {/* Doc list */}
+              {loadingDocs.length > 0 && (
+                <ul className="space-y-1.5 mt-1">
+                  {loadingDocs.map((doc, i) => (
+                    <li key={i} className={`flex items-center gap-1.5 text-xs ${doc.done ? "text-[#7B92A5]" : "text-[#e8e8e8]"}`}>
+                      {doc.done ? (
+                        <svg className="w-3 h-3 text-[#D9FF00] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3 h-3 text-[#D9FF00] shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                      )}
+                      <span className="truncate">{doc.name}</span>
+                      {doc.industry && <span className={`shrink-0 ${doc.done ? "text-[#4A6070]" : "text-[#7B92A5]"}`}>· {doc.industry}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         )}
@@ -374,7 +456,7 @@ export default function Home() {
         </div>
         <p className="text-center text-xs text-[#4A6070] mt-2">
           Built on top of trend reports 2026 collection from{" "}
-          <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#D9FF00] hover:text-[#E8FF4D] transition-colors">Amy Daroukakis</a>
+          <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#7B92A5] hover:text-[#e8e8e8] underline underline-offset-2 transition-colors">Amy Daroukakis</a>
         </p>
       </footer>
     </div>
