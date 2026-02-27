@@ -38,6 +38,8 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -109,7 +111,9 @@ export default function Home() {
 
     setMessages((prev) => [...prev, { id: ++msgIdCounter, role: "user", content: q }]);
     setInput("");
+    setElapsed(0);
     setLoading(true);
+    timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
 
     try {
       const body: Record<string, unknown> = { question: q };
@@ -140,6 +144,7 @@ export default function Home() {
         { id: ++msgIdCounter, role: "assistant", content: "Something went wrong. Make sure the API is running (`make api`)." },
       ]);
     } finally {
+      if (timerRef.current) clearInterval(timerRef.current);
       setLoading(false);
       textareaRef.current?.focus();
     }
@@ -290,10 +295,11 @@ export default function Home() {
         {loading && (
           <div className="flex items-start mb-6">
             <div className="bg-[#1a1a1a] border border-[#2e2e2e] rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex gap-1 items-center h-4">
+              <div className="flex gap-2 items-center h-4">
                 <span className="w-1.5 h-1.5 bg-[#6366f1] rounded-full animate-bounce [animation-delay:0ms]" />
                 <span className="w-1.5 h-1.5 bg-[#6366f1] rounded-full animate-bounce [animation-delay:150ms]" />
                 <span className="w-1.5 h-1.5 bg-[#6366f1] rounded-full animate-bounce [animation-delay:300ms]" />
+                <span className="text-xs text-[#555] tabular-nums ml-1">{elapsed}s</span>
               </div>
             </div>
           </div>
