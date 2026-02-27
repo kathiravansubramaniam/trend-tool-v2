@@ -12,10 +12,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from contextlib import asynccontextmanager
 
+import fastapi
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from config.settings import settings
 from src.index.reader import get_index_stats, get_top_industries
 from src.index.schema import init_db
 from src.index.vector_store import get_vector_count
@@ -173,6 +175,19 @@ def stats():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/api/admin/upload-db")
+async def upload_db(file: bytes = fastapi.Body(..., media_type="application/octet-stream")):
+    """Upload a SQLite database file to replace the current one."""
+    import shutil
+    db_path = settings.db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    backup = db_path.with_suffix(".db.bak")
+    if db_path.exists():
+        shutil.copy2(db_path, backup)
+    db_path.write_bytes(file)
+    return {"status": "ok", "bytes": len(file)}
 
 
 # Parse state
