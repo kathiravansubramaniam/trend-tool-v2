@@ -124,7 +124,7 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
           <p className="text-xs text-[#7B92A5] mb-2">
             Sources ({sources.length} document{sources.length !== 1 ? "s" : ""})
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-stretch">
             {sources.map((s, i) => (
               <SourceCard key={i} source={s} />
             ))}

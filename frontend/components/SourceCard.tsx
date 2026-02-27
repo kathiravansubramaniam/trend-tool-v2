@@ -8,7 +8,7 @@ interface Source {
 
 export default function SourceCard({ source }: { source: Source }) {
   const inner = (
-    <div className="rounded-lg border border-[#243340] bg-[#1C2B36] px-3 py-2 text-sm transition-colors hover:border-[#D9FF00]">
+    <div className="h-full rounded-lg border border-[#243340] bg-[#1C2B36] px-3 py-2 text-sm transition-colors hover:border-[#D9FF00]">
       <p className="font-medium text-[#e8e8e8] leading-snug truncate" title={source.name}>
         {source.name}
       </p>
@@ -29,7 +29,7 @@ export default function SourceCard({ source }: { source: Source }) {
 
   if (source.url) {
     return (
-      <a href={source.url} target="_blank" rel="noopener noreferrer" className="block">
+      <a href={source.url} target="_blank" rel="noopener noreferrer" className="block h-full">
         {inner}
       </a>
     );
