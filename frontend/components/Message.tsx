@@ -38,8 +38,8 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
           isUser
-            ? "bg-[#6366f1] text-white rounded-br-sm"
-            : "bg-[#1a1a1a] text-[#e8e8e8] border border-[#2e2e2e] rounded-bl-sm"
+            ? "bg-[#D9FF00] text-[#151F27] rounded-br-sm"
+            : "bg-[#1C2B36] text-[#e8e8e8] border border-[#243340] rounded-bl-sm"
         }`}
       >
         {isUser ? (
@@ -56,13 +56,13 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
               ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
               li: ({ children }) => <li className="leading-relaxed">{children}</li>,
               strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-              em: ({ children }) => <em className="italic text-[#c8c8c8]">{children}</em>,
-              code: ({ children }) => <code className="bg-[#2a2a2a] px-1.5 py-0.5 rounded text-xs font-mono text-[#e8c880]">{children}</code>,
-              blockquote: ({ children }) => <blockquote className="border-l-2 border-[#6366f1] pl-3 my-3 text-[#aaa] italic">{children}</blockquote>,
-              hr: () => <hr className="border-[#2e2e2e] my-3" />,
+              em: ({ children }) => <em className="italic text-[#7B92A5]">{children}</em>,
+              code: ({ children }) => <code className="bg-[#243340] px-1.5 py-0.5 rounded text-xs font-mono text-[#D9FF00]">{children}</code>,
+              blockquote: ({ children }) => <blockquote className="border-l-2 border-[#D9FF00] pl-3 my-3 text-[#7B92A5] italic">{children}</blockquote>,
+              hr: () => <hr className="border-[#243340] my-3" />,
               table: ({ children }) => <div className="overflow-x-auto mb-3"><table className="text-xs border-collapse w-full">{children}</table></div>,
-              th: ({ children }) => <th className="border border-[#2e2e2e] px-3 py-1.5 bg-[#222] font-semibold text-left">{children}</th>,
-              td: ({ children }) => <td className="border border-[#2e2e2e] px-3 py-1.5">{children}</td>,
+              th: ({ children }) => <th className="border border-[#243340] px-3 py-1.5 bg-[#1A2830] font-semibold text-left">{children}</th>,
+              td: ({ children }) => <td className="border border-[#243340] px-3 py-1.5">{children}</td>,
             }}
           >
             {content}
@@ -73,13 +73,13 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
       {!isUser && (
         <div className="flex items-center gap-2">
           {elapsed !== undefined && (
-            <span className="text-xs text-[#555] tabular-nums">{elapsed}s</span>
+            <span className="text-xs text-[#4A6070] tabular-nums">{elapsed}s</span>
           )}
           {/* Copy button */}
           <button
             onClick={handleCopy}
             title="Copy answer"
-            className="flex items-center gap-1.5 text-xs text-[#666] hover:text-[#aaa] transition-colors px-2 py-1 rounded-lg hover:bg-[#1a1a1a]"
+            className="flex items-center gap-1.5 text-xs text-[#7B92A5] hover:text-[#e8e8e8] transition-colors px-2 py-1 rounded-lg hover:bg-[#1C2B36]"
           >
             {copied ? (
               <>
@@ -106,8 +106,8 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
               title={isFollowUpActive ? "Stop following up on these docs" : "Ask follow-up questions using these docs"}
               className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg transition-colors ${
                 isFollowUpActive
-                  ? "bg-[#6366f1]/20 text-[#818cf8] hover:bg-[#6366f1]/30"
-                  : "text-[#666] hover:text-[#aaa] hover:bg-[#1a1a1a]"
+                  ? "bg-[#D9FF00]/20 text-[#D9FF00] hover:bg-[#D9FF00]/30"
+                  : "text-[#7B92A5] hover:text-[#e8e8e8] hover:bg-[#1C2B36]"
               }`}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -121,7 +121,7 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
 
       {sources && sources.length > 0 && (
         <div className="w-full max-w-[80%]">
-          <p className="text-xs text-[#888] mb-2">
+          <p className="text-xs text-[#7B92A5] mb-2">
             Sources ({sources.length} document{sources.length !== 1 ? "s" : ""})
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
