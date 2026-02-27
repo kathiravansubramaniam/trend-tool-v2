@@ -378,7 +378,7 @@ export default function Home() {
           </button>
         </div>
         <p className="text-center text-xs text-[#555] mt-2">
-          Built on top of trends reports 2026 collection from{" "}
+          Built on top of trend reports 2026 collection from{" "}
           <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#6366f1] hover:text-[#818cf8] transition-colors">Amy Daroukakis</a>
         </p>
       </footer>
