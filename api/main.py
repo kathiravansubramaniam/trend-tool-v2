@@ -10,11 +10,14 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.index.reader import get_index_stats, get_top_industries
+from src.index.schema import init_db
 from src.index.vector_store import get_vector_count
 from src.query.answerer import answer_from_chunks, answer_question
 from src.query.retriever import load_docs_by_gcs_names, retrieve_relevant_docs
@@ -40,7 +43,13 @@ def _cache_chunks(context_id: str, chunks: list[tuple[str, str]]) -> None:
         _chunk_cache.popitem(last=False)
 
 
-app = FastAPI(title="Trend Analysis Bot API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Trend Analysis Bot API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
