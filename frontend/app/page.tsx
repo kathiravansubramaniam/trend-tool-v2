@@ -19,6 +19,7 @@ interface ChatMessage {
   content: string;
   sources?: Source[];
   context_id?: string | null;
+  elapsed?: number;
 }
 
 interface Industry {
@@ -136,7 +137,7 @@ export default function Home() {
       const data = await res.json();
       setMessages((prev) => [
         ...prev,
-        { id: ++msgIdCounter, role: "assistant", content: data.answer, sources: data.sources, context_id: data.context_id },
+        { id: ++msgIdCounter, role: "assistant", content: data.answer, sources: data.sources, context_id: data.context_id, elapsed },
       ]);
     } catch {
       setMessages((prev) => [
@@ -160,7 +161,8 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen bg-[#0f0f0f]">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-[#2e2e2e] bg-[#0f0f0f]">
+      <header className="px-6 py-4 border-b border-[#2e2e2e] bg-[#0f0f0f]">
+        <div className="flex items-center justify-between max-w-2xl mx-auto">
         <div>
           <h1 className="text-lg font-semibold text-[#e8e8e8]">Trend Analysis Bot</h1>
           {stats && (
@@ -247,6 +249,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        </div>
       </header>
 
       {/* Messages */}
@@ -287,6 +290,7 @@ export default function Home() {
             role={msg.role}
             content={msg.content}
             sources={msg.sources}
+            elapsed={msg.elapsed}
             isFollowUpActive={followUpMsgId === msg.id}
             onFollowUp={(sources) => handleFollowUp(msg.id, sources, msg.context_id ?? null)}
           />

@@ -17,11 +17,12 @@ interface MessageProps {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  elapsed?: number;
   isFollowUpActive?: boolean;
   onFollowUp?: (sources: Source[]) => void;
 }
 
-export default function Message({ role, content, sources, isFollowUpActive, onFollowUp }: MessageProps) {
+export default function Message({ role, content, sources, elapsed, isFollowUpActive, onFollowUp }: MessageProps) {
   const isUser = role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -71,6 +72,9 @@ export default function Message({ role, content, sources, isFollowUpActive, onFo
 
       {!isUser && (
         <div className="flex items-center gap-2">
+          {elapsed !== undefined && (
+            <span className="text-xs text-[#555] tabular-nums">{elapsed}s</span>
+          )}
           {/* Copy button */}
           <button
             onClick={handleCopy}
