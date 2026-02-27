@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.local
+
+# Data (persisted on Railway volume, not in git)
+data/index.db
+data/pdf_cache/
+data/chroma/
+data/chroma_db/
+data/.gcs_state.json
+
+# GCP credentials
+gcp/service-account-key.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# macOS
+.DS_Store
