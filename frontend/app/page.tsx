@@ -379,7 +379,7 @@ export default function Home() {
         </div>
         <p className="text-center text-xs text-[#555] mt-2">
           Enter to send · Shift+Enter for new line · Built on top of trends reports 2026 collection from{" "}
-          <a href="https://www.linkedin.com/in/amydaroukakis?miniProfileUrn=urn%3Ali%3Afsd_profile%3AACoAAACPM3sBgbBCsfMgRQUgsgql8F7kaU2jM0Q" target="_blank" rel="noopener noreferrer" className="text-[#6366f1] hover:text-[#818cf8] transition-colors">Amy Daroukakis</a>
+          <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#6366f1] hover:text-[#818cf8] transition-colors">Amy Daroukakis</a>
         </p>
       </footer>
     </div>
