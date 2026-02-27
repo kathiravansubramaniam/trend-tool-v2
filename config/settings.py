@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     gcs_bucket_name: str
     gcs_project_id: str
     gcs_credentials_path: str = "./gcp/service-account-key.json"
+    gcs_credentials_json: str = ""  # JSON string alternative to file (use on Railway/Vercel)
 
     # Models
     parse_model: str = "gpt-4o-mini"

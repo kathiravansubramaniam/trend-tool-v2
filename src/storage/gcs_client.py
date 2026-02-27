@@ -19,10 +19,17 @@ class GCSObject:
 
 class GCSClient:
     def __init__(self):
-        creds_path = settings.credentials_path
-        if creds_path.exists():
+        if settings.gcs_credentials_json:
+            import json
+            info = json.loads(settings.gcs_credentials_json)
+            credentials = service_account.Credentials.from_service_account_info(info)
+            self._client = storage.Client(
+                project=settings.gcs_project_id,
+                credentials=credentials,
+            )
+        elif settings.credentials_path.exists():
             credentials = service_account.Credentials.from_service_account_file(
-                str(creds_path)
+                str(settings.credentials_path)
             )
             self._client = storage.Client(
                 project=settings.gcs_project_id,
