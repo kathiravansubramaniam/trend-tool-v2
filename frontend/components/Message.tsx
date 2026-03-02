@@ -18,11 +18,9 @@ interface MessageProps {
   content: string;
   sources?: Source[];
   elapsed?: number;
-  isFollowUpActive?: boolean;
-  onFollowUp?: (sources: Source[]) => void;
 }
 
-export default function Message({ role, content, sources, elapsed, isFollowUpActive, onFollowUp }: MessageProps) {
+export default function Message({ role, content, sources, elapsed }: MessageProps) {
   const isUser = role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -99,23 +97,6 @@ export default function Message({ role, content, sources, elapsed, isFollowUpAct
             )}
           </button>
 
-          {/* Follow-up toggle — only when sources are present */}
-          {sources && sources.length > 0 && onFollowUp && (
-            <button
-              onClick={() => onFollowUp(isFollowUpActive ? [] : sources)}
-              title={isFollowUpActive ? "Stop following up on these docs" : "Ask follow-up questions using these docs"}
-              className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg transition-colors ${
-                isFollowUpActive
-                  ? "bg-[#D9FF00]/20 text-[#D9FF00] hover:bg-[#D9FF00]/30"
-                  : "text-[#7B92A5] hover:text-[#e8e8e8] hover:bg-[#1C2B36]"
-              }`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              <span>{isFollowUpActive ? "Following up" : "Follow up"}</span>
-            </button>
-          )}
         </div>
       )}
 

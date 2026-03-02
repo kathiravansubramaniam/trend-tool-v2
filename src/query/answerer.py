@@ -16,6 +16,7 @@ Rules:
 3. If the documents don't contain relevant information for the question, say so clearly.
 4. Be specific: include numbers, timeframes, and named companies/technologies when they appear in the sources.
 5. Structure your answer with clear paragraphs. Use bullet points for lists of forecasts or trends.
+6. At the end of your response, if the user has not already mentioned a specific client or project brief, add a short follow-up question on a new line asking: who is the client or project this research is for, and what challenge or brief are they working on? This helps tailor the next search. Also let them know they can click "Follow up" above the input box to continue asking questions using the same documents.
 """
 
 

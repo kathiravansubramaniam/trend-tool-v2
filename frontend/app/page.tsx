@@ -329,8 +329,6 @@ export default function Home() {
             content={msg.content}
             sources={msg.sources}
             elapsed={msg.elapsed}
-            isFollowUpActive={followUpMsgId === msg.id}
-            onFollowUp={(sources) => handleFollowUp(msg.id, sources, msg.context_id ?? null)}
           />
         ))}
 
@@ -391,20 +389,36 @@ export default function Home() {
 
       {/* Input */}
       <footer className="px-6 py-4 border-t border-[#243340] bg-[#151F27]">
-        {/* Follow-up banner */}
-        {followUpSources.length > 0 && (
-          <div className="flex items-center justify-between max-w-2xl mx-auto mb-2 px-3 py-1.5 rounded-lg bg-[#D9FF00]/10 border border-[#D9FF00]/30">
-            <span className="text-xs text-[#D9FF00]">
-              Following up on {followUpSources.length} document{followUpSources.length !== 1 ? "s" : ""}
-            </span>
-            <button
-              onClick={() => { setFollowUpMsgId(null); setFollowUpSources([]); setFollowUpContextId(null); }}
-              className="text-xs text-[#D9FF00] hover:text-[#E8FF4D]"
-            >
-              Clear
-            </button>
-          </div>
-        )}
+        {/* Follow-up toggle — visible whenever the last assistant response has sources */}
+        {(() => {
+          const lastSourcedMsg = [...messages].reverse().find(m => m.role === "assistant" && m.sources && m.sources.length > 0);
+          if (!lastSourcedMsg) return null;
+          const isActive = followUpMsgId === lastSourcedMsg.id;
+          return (
+            <div className="max-w-2xl mx-auto mb-3">
+              <button
+                onClick={() => handleFollowUp(lastSourcedMsg.id, isActive ? [] : lastSourcedMsg.sources!, lastSourcedMsg.context_id ?? null)}
+                className={`w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                  isActive
+                    ? "bg-[#D9FF00]/15 border-[#D9FF00]/60 text-[#D9FF00]"
+                    : "bg-[#1C2B36] border-[#243340] text-[#7B92A5] hover:border-[#D9FF00]/40 hover:text-[#e8e8e8]"
+                }`}
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                <span className="flex-1 text-left">
+                  {isActive
+                    ? `Following up on ${lastSourcedMsg.sources!.length} document${lastSourcedMsg.sources!.length !== 1 ? "s" : ""} from last response`
+                    : `Follow up on last response (${lastSourcedMsg.sources!.length} document${lastSourcedMsg.sources!.length !== 1 ? "s" : ""})`}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${isActive ? "border-[#D9FF00]/40 text-[#D9FF00]" : "border-[#243340] text-[#4A6070]"}`}>
+                  {isActive ? "ON" : "OFF"}
+                </span>
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Industry filter pills */}
         {followUpSources.length === 0 && selectedIndustries.length > 0 && (
