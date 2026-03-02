@@ -53,6 +53,18 @@ def _cache_chunks(context_id: str, chunks: list[tuple[str, str]]) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Auto-download DB from GCS if not present locally (e.g. fresh Railway deployment)
+    db_path = settings.db_path
+    if not db_path.exists():
+        logger.info("Local DB not found — attempting download from GCS...")
+        try:
+            downloaded = _gcs.download_db(db_path)
+            if downloaded:
+                logger.info("DB downloaded from GCS successfully.")
+            else:
+                logger.info("No DB found in GCS — starting with empty index.")
+        except Exception as e:
+            logger.warning(f"Could not download DB from GCS: {e}")
     init_db()
     yield
 

@@ -1,4 +1,4 @@
-.PHONY: setup parse watch ui api dev test reindex
+.PHONY: setup parse watch ui api dev test reindex push-db
 
 setup:
 	pip3 install -r requirements.txt
@@ -25,3 +25,6 @@ dev:
 
 reindex:
 	python3 scripts/reindex.py --all
+
+push-db:
+	python3 -c "from src.storage.gcs_client import GCSClient; from pathlib import Path; GCSClient().upload_db(Path('data/index.db')); print('DB uploaded to GCS.')"

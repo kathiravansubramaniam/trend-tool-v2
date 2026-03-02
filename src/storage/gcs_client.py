@@ -83,6 +83,21 @@ class GCSClient:
             version="v4",
         )
 
+    _DB_GCS_PATH = "_index/index.db"
+
+    def upload_db(self, local_path: Path) -> None:
+        blob = self._bucket.blob(self._DB_GCS_PATH)
+        blob.upload_from_filename(str(local_path), content_type="application/octet-stream", timeout=120)
+
+    def download_db(self, local_path: Path) -> bool:
+        """Download DB from GCS. Returns True if found and downloaded, False if not found."""
+        blob = self._bucket.blob(self._DB_GCS_PATH)
+        if not blob.exists():
+            return False
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(str(local_path))
+        return True
+
     def upload_pdf(self, local_path: Path, gcs_name: str) -> str:
         blob = self._bucket.blob(gcs_name)
         blob.upload_from_filename(
