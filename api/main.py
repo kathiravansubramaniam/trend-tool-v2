@@ -102,6 +102,47 @@ class QueryResponse(BaseModel):
     context_id: str | None = None  # returned so frontend can send it back on follow-up
 
 
+class ValidateRequest(BaseModel):
+    question: str
+
+
+class ValidateResponse(BaseModel):
+    valid: bool
+    message: str | None = None
+
+
+@app.post("/api/validate-query", response_model=ValidateResponse)
+async def validate_query(req: ValidateRequest):
+    """Use LLM to quickly assess whether the input is a researchable trend question."""
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    resp = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=60,
+        temperature=0,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a query validator for a trend research tool. "
+                    "Decide if the user's input is a researchable question about trends, "
+                    "industries, markets, consumer behaviour, forecasts, or business strategy. "
+                    "Reply with JSON only: {\"valid\": true} or "
+                    "{\"valid\": false, \"message\": \"<short friendly reason>\"}. "
+                    "Reject greetings, nonsense, gibberish, and off-topic questions."
+                ),
+            },
+            {"role": "user", "content": req.question},
+        ],
+    )
+    import json as _json
+    try:
+        data = _json.loads(resp.choices[0].message.content or "{}")
+        return ValidateResponse(valid=bool(data.get("valid")), message=data.get("message"))
+    except Exception:
+        return ValidateResponse(valid=True)  # fail open
+
+
 @app.post("/api/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     if not req.question.strip():

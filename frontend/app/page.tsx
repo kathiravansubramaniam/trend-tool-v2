@@ -33,12 +33,6 @@ interface Industry {
   count: number;
 }
 
-interface Stats {
-  indexed: number;
-  industries: number;
-  embeddings: number;
-}
-
 let msgIdCounter = 0;
 
 export default function Home() {
@@ -55,7 +49,6 @@ export default function Home() {
   const [industries, setIndustries]         = useState<Industry[]>([]);
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [showPicker, setShowPicker]         = useState(false);
-  const [stats, setStats]                   = useState<Stats | null>(null);
   const [followUpMsgId, setFollowUpMsgId]   = useState<number | null>(null);
   const [followUpSources, setFollowUpSources]       = useState<Source[]>([]);
   const [followUpContextId, setFollowUpContextId]   = useState<string | null>(null);
@@ -72,7 +65,6 @@ export default function Home() {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => {
     fetch(`${API}/api/industries`).then((r) => r.json()).then(setIndustries).catch(() => {});
-    fetch(`${API}/api/stats`).then((r) => r.json()).then(setStats).catch(() => {});
     // Restore saved map clusters
     try {
       const saved = localStorage.getItem(MAP_CLUSTERS_KEY);
@@ -150,8 +142,35 @@ export default function Home() {
 
     setMessages((prev) => [...prev, { id: ++msgIdCounter, role: "user", content: q }]);
     setInput("");
-    setElapsed(0); elapsedRef.current = 0;
     setLoading(true); setLoadingPhase("searching"); setLoadingDocs([]); setLoadingTotal(0);
+
+    // ── Validate query with LLM before running full search ──────────────────
+    try {
+      const vRes = await fetch(`${API}/api/validate-query`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
+      if (vRes.ok) {
+        const v = await vRes.json();
+        if (!v.valid) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: ++msgIdCounter,
+              role: "assistant",
+              content: v.message
+                ? `${v.message} Try asking something like *"What are the biggest consumer trends for 2026?"*`
+                : "That doesn't look like a trend research question. Try asking something like *\"What are the biggest consumer trends for 2026?\"*",
+            },
+          ]);
+          setLoading(false); setLoadingPhase(null);
+          return;
+        }
+      }
+    } catch { /* fail open — proceed with query */ }
+
+    setElapsed(0); elapsedRef.current = 0;
     timerRef.current = setInterval(() => setElapsed((s) => { elapsedRef.current = s + 1; return s + 1; }), 1000);
 
     try {
@@ -240,14 +259,12 @@ export default function Home() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="px-6 py-4 border-b border-[#243340] bg-[#151F27] shrink-0">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
-          {/* Title */}
-          <div>
-            <h1 className="text-lg font-semibold text-[#e8e8e8]">Trend Analysis Bot</h1>
-            {stats && (
-              <p className="text-xs text-[#7B92A5] mt-0.5">
-                {stats.indexed} reports · {stats.industries} industries
-              </p>
-            )}
+          {/* ASCII art title */}
+          <div className="shrink-0 min-w-0 overflow-hidden">
+            <pre
+              className="font-mono text-[#D9FF00] leading-[1.15] select-none"
+              style={{ fontSize: "clamp(2px, 0.45vw, 4px)" }}
+            >{`████████╗██████╗ ███████╗███╗   ██╗██████╗ ███████╗\n   ██╔══╝██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝\n   ██║   ██████╔╝█████╗  ██╔██╗ ██║██║  ██║███████╗\n   ██║   ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║╚════██║\n   ██║   ██║  ██║███████╗██║ ╚████║██████╔╝███████║\n   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝╚══════╝`}</pre>
           </div>
 
           {/* Tab switcher */}
@@ -288,67 +305,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Industry filter — only shown in chat */}
-          {activeView === "chat" && (
-            <div className="relative" ref={pickerRef}>
-              <button
-                onClick={() => setShowPicker((v) => !v)}
-                className={`flex items-center gap-2 bg-[#1C2B36] border text-sm rounded-lg px-3 py-2 focus:outline-none transition-colors cursor-pointer ${
-                  selectedIndustries.length > 0 ? "border-[#D9FF00] text-[#e8e8e8]" : "border-[#243340] text-[#e8e8e8]"
-                }`}
-              >
-                <span className="max-w-[180px] truncate">{filterLabel}</span>
-                {selectedIndustries.length > 0 && (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); setSelectedIndustries([]); }}
-                    className="ml-1 text-[#7B92A5] hover:text-[#e8e8e8] leading-none"
-                    title="Clear filters"
-                  >×</span>
-                )}
-                <svg className={`w-3.5 h-3.5 text-[#7B92A5] transition-transform ${showPicker ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {showPicker && (
-                <div className="absolute right-0 mt-1 w-64 bg-[#1C2B36] border border-[#243340] rounded-xl shadow-xl z-50 overflow-hidden">
-                  <div className="px-3 py-2 border-b border-[#243340] flex items-center justify-between">
-                    <span className="text-xs text-[#7B92A5]">
-                      {selectedIndustries.length === 0 ? "Filter by industry" : `${selectedIndustries.length} selected`}
-                    </span>
-                    {selectedIndustries.length > 0 && (
-                      <button onClick={() => setSelectedIndustries([])} className="text-xs text-[#D9FF00] hover:text-[#E8FF4D]">
-                        Clear all
-                      </button>
-                    )}
-                  </div>
-                  <ul className="max-h-72 overflow-y-auto py-1">
-                    {industries.map((ind) => {
-                      const checked = selectedIndustries.includes(ind.name);
-                      return (
-                        <li key={ind.name}>
-                          <button
-                            onClick={() => toggleIndustry(ind.name)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-[#243340] ${checked ? "text-[#e8e8e8]" : "text-[#7B92A5]"}`}
-                          >
-                            <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors ${checked ? "bg-[#D9FF00] border-[#D9FF00]" : "border-[#2A3D4A]"}`}>
-                              {checked && (
-                                <svg className="w-2.5 h-2.5 text-[#151F27]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </span>
-                            <span className="flex-1 truncate">{ind.name}</span>
-                            <span className="text-xs text-[#4A6070]">{ind.count}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </header>
 
@@ -363,33 +319,16 @@ export default function Home() {
       {activeView === "chat" && (
         <>
           <main className="flex-1 overflow-y-auto px-6 py-6 scrollbar-thin">
-            <div className="max-w-2xl mx-auto">
+            <div className="max-w-2xl mx-auto h-full flex flex-col">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#D9FF00]/20 flex items-center justify-center text-2xl">
-                    📊
-                  </div>
-                  <div>
-                    <p className="text-[#e8e8e8] font-medium">Ask anything about trends</p>
-                    <p className="text-[#7B92A5] text-sm mt-1">
-                      Search across {stats?.indexed ?? "—"} trend reports
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2 mt-2 w-full max-w-md">
-                    {[
-                      "What are the biggest consumer trends for 2026?",
-                      "What do reports say about AI adoption in marketing?",
-                      "Which industries are forecasting the most growth?",
-                    ].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => { setInput(s); textareaRef.current?.focus(); }}
-                        className="text-sm text-[#7B92A5] border border-[#243340] rounded-xl px-4 py-2.5 hover:border-[#D9FF00] hover:text-[#e8e8e8] transition-colors text-left"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                  <pre
+                    className="font-mono text-[#1C2B36] leading-[1.15] select-none"
+                    style={{ fontSize: "clamp(6px, 2vw, 14px)" }}
+                  >{`████████╗██████╗ ███████╗███╗   ██╗██████╗ ███████╗\n   ██╔══╝██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝\n   ██║   ██████╔╝█████╗  ██╔██╗ ██║██║  ██║███████╗\n   ██║   ██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║╚════██║\n   ██║   ██║  ██║███████╗██║ ╚████║██████╔╝███████║\n   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═════╝╚══════╝`}</pre>
+                  <p className="text-[#1C2B36] text-sm max-w-xs leading-relaxed">
+                    Ask anything about trends and get answers from the latest trend reports
+                  </p>
                 </div>
               )}
 
@@ -453,7 +392,7 @@ export default function Home() {
             </div>
           </main>
 
-          <footer className="px-6 py-4 border-t border-[#243340] bg-[#151F27] shrink-0">
+          <footer className="px-6 py-4 bg-[#151F27] shrink-0">
             {/* Follow-up toggle */}
             {(() => {
               const lastSourcedMsg = [...messages].reverse().find(m => m.role === "assistant" && m.sources && m.sources.length > 0);
@@ -485,6 +424,25 @@ export default function Home() {
               );
             })()}
 
+            {/* Suggestion pills — shown only when chat is empty */}
+            {messages.length === 0 && followUpSources.length === 0 && (
+              <div className="flex flex-wrap gap-2 mb-3 max-w-2xl mx-auto">
+                {[
+                  "What are the biggest consumer trends for 2026?",
+                  "What do reports say about AI adoption in marketing?",
+                  "Which industries are forecasting the most growth?",
+                ].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => { setInput(s); textareaRef.current?.focus(); }}
+                    className="text-xs text-[#7B92A5] border border-[#243340] rounded-full px-3 py-1.5 hover:border-[#D9FF00]/60 hover:text-[#e8e8e8] transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Industry filter pills */}
             {followUpSources.length === 0 && selectedIndustries.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2 max-w-2xl mx-auto">
@@ -497,7 +455,67 @@ export default function Home() {
               </div>
             )}
 
-            <div className="flex gap-3 items-end max-w-2xl mx-auto">
+            <div className="flex gap-2 items-center max-w-2xl mx-auto">
+              {/* Industry filter inside input row */}
+              <div className="relative shrink-0" ref={pickerRef}>
+                <button
+                  onClick={() => setShowPicker((v) => !v)}
+                  title={filterLabel}
+                  className={`relative flex items-center justify-center px-3 py-3 rounded-lg border transition-colors ${
+                    selectedIndustries.length > 0
+                      ? "bg-[#D9FF00]/10 border-[#D9FF00] text-[#D9FF00]"
+                      : "bg-[#1C2B36] border-[#243340] text-[#7B92A5] hover:border-[#3A5568] hover:text-[#e8e8e8]"
+                  }`}
+                >
+                  <svg className="w-4 h-4 block" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M11 12h2" />
+                  </svg>
+                  {selectedIndustries.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#D9FF00] text-[#151F27] text-[9px] font-bold flex items-center justify-center leading-none">
+                      {selectedIndustries.length}
+                    </span>
+                  )}
+                </button>
+
+                {showPicker && (
+                  <div className="absolute left-0 bottom-full mb-2 w-64 bg-[#1C2B36] border border-[#243340] rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-[#243340] flex items-center justify-between">
+                      <span className="text-xs text-[#7B92A5]">
+                        {selectedIndustries.length === 0 ? "Filter by industry" : `${selectedIndustries.length} selected`}
+                      </span>
+                      {selectedIndustries.length > 0 && (
+                        <button onClick={() => setSelectedIndustries([])} className="text-xs text-[#D9FF00] hover:text-[#E8FF4D]">
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                    <ul className="max-h-64 overflow-y-auto py-1">
+                      {industries.map((ind) => {
+                        const checked = selectedIndustries.includes(ind.name);
+                        return (
+                          <li key={ind.name}>
+                            <button
+                              onClick={() => toggleIndustry(ind.name)}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-[#243340] ${checked ? "text-[#e8e8e8]" : "text-[#7B92A5]"}`}
+                            >
+                              <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors ${checked ? "bg-[#D9FF00] border-[#D9FF00]" : "border-[#2A3D4A]"}`}>
+                                {checked && (
+                                  <svg className="w-2.5 h-2.5 text-[#151F27]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </span>
+                              <span className="flex-1 truncate">{ind.name}</span>
+                              <span className="text-xs text-[#4A6070]">{ind.count}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -505,7 +523,7 @@ export default function Home() {
                 onKeyDown={handleKeyDown}
                 placeholder={followUpSources.length > 0 ? "Ask a follow-up question..." : "Ask about a trend, industry, or forecast..."}
                 rows={1}
-                className="flex-1 bg-[#1C2B36] border border-[#243340] text-[#e8e8e8] text-sm rounded-2xl px-4 py-3 resize-none focus:outline-none focus:border-[#D9FF00] placeholder-[#4A6070] overflow-y-auto"
+                className="flex-1 bg-[#1C2B36] border border-[#243340] text-[#e8e8e8] text-sm rounded-lg px-4 py-3 resize-none focus:outline-none focus:border-[#D9FF00] placeholder-[#4A6070] overflow-y-auto"
                 style={{ lineHeight: "1.5", maxHeight: "160px" }}
                 onInput={(e) => {
                   const t = e.currentTarget;
@@ -516,12 +534,12 @@ export default function Home() {
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || loading}
-                className="bg-[#D9FF00] hover:bg-[#E8FF4D] disabled:opacity-40 disabled:cursor-not-allowed text-[#151F27] rounded-2xl px-4 py-3 text-sm font-medium transition-colors shrink-0"
+                className="bg-[#D9FF00] hover:bg-[#E8FF4D] disabled:opacity-40 disabled:cursor-not-allowed text-[#151F27] rounded-lg px-4 py-3 text-sm font-medium transition-colors shrink-0"
               >
                 Send
               </button>
             </div>
-            <p className="text-center text-xs text-[#4A6070] mt-2">
+            <p className={`text-center text-xs text-[#4A6070] transition-[margin] duration-500 ease-in-out ${messages.length > 0 ? "mt-5" : "mt-[100px]"}`}>
               Built by Kathir, on top of trend reports 2026 collection from{" "}
               <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#7B92A5] hover:text-[#e8e8e8] underline underline-offset-2 transition-colors">
                 Amy Daroukakis
