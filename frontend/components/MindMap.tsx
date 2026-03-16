@@ -4,7 +4,6 @@ import { useCallback, useEffect } from "react";
 import {
   ReactFlow,
   Background,
-  Controls,
   MiniMap,
   useNodesState,
   useEdgesState,
@@ -246,6 +245,7 @@ export default function MindMap({ clusters, onClear }: MindMapProps) {
         onNodeDragStop={handleNodeDragStop}
         nodeTypes={nodeTypes}
         nodesConnectable={false}
+        proOptions={{ hideAttribution: true }}
         fitView
         fitViewOptions={{ padding: 0.12, maxZoom: 0.85 }}
         minZoom={0.05}
@@ -254,10 +254,6 @@ export default function MindMap({ clusters, onClear }: MindMapProps) {
         style={{ background: "#0D1820" }}
       >
         <Background color="#162230" gap={28} size={1} style={{ backgroundColor: "#0D1820" }} />
-        <Controls
-          style={{ background: "#1C2B36", border: "1px solid #243340", borderRadius: 8 }}
-          showInteractive={false}
-        />
         <MiniMap
           style={{ background: "#0D1820", border: "1px solid #243340", borderRadius: 8 }}
           nodeColor={(n) => {
