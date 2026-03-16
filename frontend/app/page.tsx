@@ -522,7 +522,7 @@ export default function Home() {
               </button>
             </div>
             <p className="text-center text-xs text-[#4A6070] mt-2">
-              Built on top of trend reports 2026 collection from{" "}
+              Built by Kathir, on top of trend reports 2026 collection from{" "}
               <a href="https://www.linkedin.com/in/amydaroukakis" target="_blank" rel="noopener noreferrer" className="text-[#7B92A5] hover:text-[#e8e8e8] underline underline-offset-2 transition-colors">
                 Amy Daroukakis
               </a>
