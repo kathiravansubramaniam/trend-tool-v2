@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 
 from openai import OpenAI
@@ -26,6 +27,37 @@ class AnswerResult:
     sources: list[str]
     chunk_count: int
     all_chunks: list[tuple[str, str]] = field(default_factory=list)
+    source_insights: dict[str, list[str]] = field(default_factory=dict)
+
+
+def _extract_source_insights(answer: str, source_names: list[str]) -> dict[str, list[str]]:
+    """Parse [Source Name] citations from the answer to build per-source insight lists."""
+    result: dict[str, list[str]] = {name: [] for name in source_names}
+
+    for line in answer.split("\n"):
+        m = re.match(r"^[\s]*[-*•]\s+(.+)", line) or re.match(r"^[\s]*\d+\.\s+(.+)", line)
+        if not m:
+            continue
+        raw = m.group(1)
+
+        citations = re.findall(r"\[([^\]]+)\]", raw)
+        for cite in citations:
+            matched = None
+            for name in source_names:
+                if (
+                    name.lower() == cite.lower()
+                    or cite.lower() in name.lower()
+                    or name.lower() in cite.lower()
+                ):
+                    matched = name
+                    break
+            if matched:
+                clean = re.sub(r"\[([^\]]+)\]", "", raw)
+                clean = re.sub(r"\*\*", "", clean).strip()
+                if len(clean) > 15 and clean not in result[matched]:
+                    result[matched].append(clean)
+
+    return {k: v for k, v in result.items() if v}
 
 
 def _score_chunk(chunk: str, question: str) -> float:
@@ -81,7 +113,13 @@ def _call_llm(question: str, selected: list[tuple[str, str]]) -> AnswerResult:
     )
 
     answer_text = response.choices[0].message.content or "No answer generated."
-    return AnswerResult(answer=answer_text, sources=used_doc_names, chunk_count=len(selected))
+    source_insights = _extract_source_insights(answer_text, used_doc_names)
+    return AnswerResult(
+        answer=answer_text,
+        sources=used_doc_names,
+        chunk_count=len(selected),
+        source_insights=source_insights,
+    )
 
 
 @retry_with_backoff

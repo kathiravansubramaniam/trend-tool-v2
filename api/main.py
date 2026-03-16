@@ -293,7 +293,8 @@ async def query_stream(req: QueryRequest):
                                  "industry": doc.industry if doc else "",
                                  "topics": doc.topics[:4] if doc else [], "url": url})
 
-            yield sse({"type": "answer", "answer": result.answer, "sources": sources, "context_id": context_id})
+            yield sse({"type": "answer", "answer": result.answer, "sources": sources,
+                       "source_insights": result.source_insights, "context_id": context_id})
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
