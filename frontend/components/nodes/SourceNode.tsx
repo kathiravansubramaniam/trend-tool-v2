@@ -34,7 +34,24 @@ export default function SourceNode({ id, data }: NodeProps) {
   const gcs_name = (data.gcs_name as string | undefined) ?? "";
 
   const [expanded, setExpanded] = useState(false);
+  const [copied,   setCopied]   = useState(false);
   const { addNodes, addEdges, getNode } = useReactFlow();
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const lines = [`Source: ${name}`];
+    if (insights.length > 0) {
+      lines.push("", "Insights:");
+      insights.forEach((ins) => lines.push(`• ${ins}`));
+    }
+    if (topics.length > 0) {
+      lines.push("", `Topics: ${topics.join(", ")}`);
+    }
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   const showReadMore = insights.length > PREVIEW_COUNT;
   const visibleInsights = expanded ? insights : insights.slice(0, PREVIEW_COUNT);
@@ -120,6 +137,31 @@ export default function SourceNode({ id, data }: NodeProps) {
             </div>
           </div>
         )}
+
+        {/* ── Copy button ── */}
+        <div className="px-3.5 py-2 border-t border-[#1E3040]">
+          <button
+            onClick={handleCopy}
+            className="nodrag nopan w-full flex items-center justify-center gap-1.5 text-[9px] text-[#324550] hover:text-[#7B92A5] border border-[#1A2D3A] hover:border-[#243340] rounded-lg py-1.5 transition-colors"
+          >
+            {copied ? (
+              <>
+                <svg className="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-green-500">Copied</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+                <span>Copy insights</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {/* ── PDF link ── */}
         <div className="px-3.5 py-2.5 border-t border-[#1E3040]">

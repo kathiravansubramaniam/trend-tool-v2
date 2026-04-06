@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Handle, Position, useReactFlow, type NodeProps } from "@xyflow/react";
 import { PlusIcon } from "@radix-ui/react-icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const NODE_STYLE = { background: "transparent", border: "none", padding: 0 };
@@ -24,13 +26,16 @@ function PlusButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
 }
 
 export default function FollowUpNode({ id, data }: NodeProps) {
-  const gcs_name = (data.gcs_name as string | undefined) ?? "";
-  const docName  = (data.docName  as string | undefined) ?? "this document";
+  const gcs_name  = (data.gcs_name   as string | undefined) ?? "";
+  const docName   = (data.docName    as string | undefined) ?? "this document";
+  const initCtxId = (data.context_id as string | undefined) ?? null;
 
   const [nodeState, setNodeState] = useState<NodeState>((data.state as NodeState | undefined) ?? "idle");
   const [question,  setQuestion]  = useState((data.question as string | undefined) ?? "");
   const [answer,    setAnswer]    = useState((data.answer   as string | undefined) ?? "");
+  const [contextId, setContextId] = useState<string | null>(initCtxId);
   const [expanded,  setExpanded]  = useState(false);
+  const [copied,    setCopied]    = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const { addNodes, addEdges, getNode, updateNodeData } = useReactFlow();
@@ -54,7 +59,12 @@ export default function FollowUpNode({ id, data }: NodeProps) {
 
     try {
       const body: Record<string, unknown> = { question: q, max_docs: 1 };
-      if (gcs_name) body.pinned_gcs_names = [gcs_name];
+      // Use cached context_id if available (avoids re-chunking the PDF)
+      if (contextId) {
+        body.context_id = contextId;
+      } else if (gcs_name) {
+        body.pinned_gcs_names = [gcs_name];
+      }
 
       const res = await fetch(`${API}/api/query-stream`, {
         method: "POST",
@@ -78,9 +88,11 @@ export default function FollowUpNode({ id, data }: NodeProps) {
           const event = JSON.parse(line.slice(6));
           if (event.type === "answer") {
             const ans = event.answer as string;
+            const ctxId = (event.context_id as string | undefined) ?? null;
             setAnswer(ans);
+            setContextId(ctxId);
             setNodeState("answered");
-            updateNodeData(id, { gcs_name, docName, state: "answered", question: q, answer: ans });
+            updateNodeData(id, { gcs_name, docName, state: "answered", question: q, answer: ans, context_id: ctxId });
           }
         }
       }
@@ -88,6 +100,15 @@ export default function FollowUpNode({ id, data }: NodeProps) {
       setAnswer("Something went wrong. Make sure the API is running.");
       setNodeState("answered");
     }
+  };
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = answer ? `Q: ${question}\n\nA: ${answer}` : question;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   const handlePlus = (e: React.MouseEvent) => {
@@ -99,7 +120,8 @@ export default function FollowUpNode({ id, data }: NodeProps) {
       id: newId,
       type: "followUpNode",
       position: { x: thisNode.position.x + 340, y: thisNode.position.y },
-      data: { gcs_name, docName, state: "idle" },
+      // Pass context_id so the next node reuses cached chunks
+      data: { gcs_name, docName, state: "idle", context_id: contextId },
       style: NODE_STYLE,
       draggable: true,
     }]);
@@ -112,7 +134,6 @@ export default function FollowUpNode({ id, data }: NodeProps) {
     }]);
   };
 
-  // Truncate threshold: approx 400 chars before we show See more
   const TRUNCATE_AT = 400;
   const isLong = answer.length > TRUNCATE_AT;
 
@@ -172,9 +193,26 @@ export default function FollowUpNode({ id, data }: NodeProps) {
           <p className="text-[#3A5568] text-[9px] font-semibold uppercase tracking-wide mb-1">Q</p>
           <p className="text-[#7B92A5] text-[10px] italic mb-2.5 leading-snug">"{question}"</p>
 
-          <p className={`text-[#b8d0e0] text-[11px] leading-relaxed ${expanded ? "" : "line-clamp-6"}`}>
-            {answer}
-          </p>
+          <div className={`text-[#b8d0e0] text-[11px] leading-relaxed ${expanded ? "" : "line-clamp-6"}`}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => <p className="font-bold text-[#e0eaf0] mt-2 mb-1 first:mt-0">{children}</p>,
+                h2: ({ children }) => <p className="font-bold text-[#e0eaf0] mt-2 mb-1 first:mt-0">{children}</p>,
+                h3: ({ children }) => <p className="font-semibold text-[#c8dce8] mt-1.5 mb-0.5 first:mt-0">{children}</p>,
+                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+                li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                strong: ({ children }) => <strong className="font-semibold text-[#e0eaf0]">{children}</strong>,
+                em: ({ children }) => <em className="italic text-[#7B92A5]">{children}</em>,
+                code: ({ children }) => <code className="bg-[#152230] px-1 py-0.5 rounded text-[10px] font-mono text-[#D9FF00]">{children}</code>,
+                blockquote: ({ children }) => <blockquote className="border-l-2 border-[#D9FF00]/40 pl-2.5 my-1.5 text-[#7B92A5] italic">{children}</blockquote>,
+              }}
+            >
+              {answer}
+            </ReactMarkdown>
+          </div>
 
           {isLong && (
             <button
@@ -184,6 +222,29 @@ export default function FollowUpNode({ id, data }: NodeProps) {
               {expanded ? "See less ↑" : "See more ↓"}
             </button>
           )}
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            className="nodrag nopan mt-3 w-full flex items-center justify-center gap-1.5 text-[10px] text-[#4A6070] hover:text-[#7B92A5] border border-[#1A2D3A] hover:border-[#243340] rounded-lg py-1.5 transition-colors"
+          >
+            {copied ? (
+              <>
+                <svg className="w-3 h-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-green-500">Copied</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+                <span>Copy answer</span>
+              </>
+            )}
+          </button>
 
           <PlusButton onClick={handlePlus} />
         </>
