@@ -52,6 +52,7 @@ export default function Home() {
   const [followUpMsgId, setFollowUpMsgId]   = useState<number | null>(null);
   const [followUpSources, setFollowUpSources]       = useState<Source[]>([]);
   const [followUpContextId, setFollowUpContextId]   = useState<string | null>(null);
+  const parentClusterIdRef = useRef<string | null>(null);
   const [loadingPhase, setLoadingPhase]     = useState<"searching" | "loading" | "answering" | null>(null);
   const [loadingDocs, setLoadingDocs]       = useState<{ name: string; industry: string; done: boolean }[]>([]);
   const [loadingTotal, setLoadingTotal]     = useState(0);
@@ -107,10 +108,11 @@ export default function Home() {
   };
 
   const addCluster = useCallback(
-    (question: string, sources: Source[], sourceInsights: Record<string, string[]>) => {
+    (question: string, sources: Source[], sourceInsights: Record<string, string[]>, parentClusterId?: string) => {
       const cluster: ClusterData = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         question,
+        parentClusterId,
         sources: sources.map((s): ClusterSource => ({
           name: s.name,
           industry: s.industry,
@@ -142,6 +144,8 @@ export default function Home() {
 
     setMessages((prev) => [...prev, { id: ++msgIdCounter, role: "user", content: q }]);
     setInput("");
+    // Capture parent cluster ID before the request (for map follow-up linking)
+    parentClusterIdRef.current = followUpSources.length > 0 ? (mapClusters[mapClusters.length - 1]?.id ?? null) : null;
     setLoading(true); setLoadingPhase("searching"); setLoadingDocs([]); setLoadingTotal(0);
 
     // ── Validate query with LLM before running full search ──────────────────
@@ -216,10 +220,11 @@ export default function Home() {
             setLoadingPhase("answering");
             setLoadingDocs((prev) => prev.map((d) => ({ ...d, done: true })));
           } else if (event.type === "answer") {
+            const newMsgId = ++msgIdCounter;
             setMessages((prev) => [
               ...prev,
               {
-                id: ++msgIdCounter,
+                id: newMsgId,
                 role: "assistant",
                 content: event.answer,
                 sources: event.sources,
@@ -227,9 +232,15 @@ export default function Home() {
                 elapsed: elapsedRef.current,
               },
             ]);
+            // ── Auto-activate follow-up mode ─────────────────────────────
+            if (event.sources?.length > 0) {
+              setFollowUpMsgId(newMsgId);
+              setFollowUpSources(event.sources);
+              setFollowUpContextId(event.context_id ?? null);
+            }
             // ── Add cluster to mind map ──────────────────────────────────
             if (event.sources?.length > 0) {
-              addCluster(q, event.sources, event.source_insights ?? {});
+              addCluster(q, event.sources, event.source_insights ?? {}, parentClusterIdRef.current ?? undefined);
             }
           } else if (event.type === "error") {
             throw new Error(event.message);

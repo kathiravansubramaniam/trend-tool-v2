@@ -30,6 +30,7 @@ export interface ClusterSource {
 export interface ClusterData {
   id: string;
   question: string;
+  parentClusterId?: string;
   sources: ClusterSource[];
 }
 
@@ -142,6 +143,20 @@ export default function MindMap({ clusters, onClear }: MindMapProps) {
       allNodes.push(...cn);
       allEdges.push(...ce);
     });
+
+    // Add cross-cluster edges: parent question → child question
+    clusters.forEach((cluster) => {
+      if (cluster.parentClusterId) {
+        allEdges.push({
+          id: `e-cross-${cluster.parentClusterId}-${cluster.id}`,
+          source: `q-${cluster.parentClusterId}`,
+          target: `q-${cluster.id}`,
+          type: "default",
+          style: { stroke: "#D9FF00", strokeWidth: 1, opacity: 0.35, strokeDasharray: "6 3" },
+        });
+      }
+    });
+
     setNodes(allNodes);
     setEdges(allEdges);
   }, [clusters, setNodes, setEdges]);
@@ -168,6 +183,17 @@ export default function MindMap({ clusters, onClear }: MindMapProps) {
       const { nodes: cn, edges: ce } = buildCluster(idx, cluster);
       allNodes.push(...cn);
       allEdges.push(...ce);
+    });
+    clusters.forEach((cluster) => {
+      if (cluster.parentClusterId) {
+        allEdges.push({
+          id: `e-cross-${cluster.parentClusterId}-${cluster.id}`,
+          source: `q-${cluster.parentClusterId}`,
+          target: `q-${cluster.id}`,
+          type: "default",
+          style: { stroke: "#D9FF00", strokeWidth: 1, opacity: 0.35, strokeDasharray: "6 3" },
+        });
+      }
     });
     setNodes(allNodes);
     setEdges(allEdges);
