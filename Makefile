@@ -1,4 +1,4 @@
-.PHONY: setup parse watch ui api dev test reindex push-db
+.PHONY: setup parse watch ui api dev test reindex migrate push-db
 
 setup:
 	pip3 install -r requirements.txt
@@ -22,6 +22,9 @@ api:
 
 dev:
 	cd frontend && npm run dev
+
+migrate:
+	python3 -c "from src.index.schema import migrate_db; migrate_db()"
 
 reindex:
 	python3 scripts/reindex.py --all
