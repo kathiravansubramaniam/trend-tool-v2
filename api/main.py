@@ -24,11 +24,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from config.settings import settings
+from src.index.chunk_schema import get_chunk_count, init_chunks_db
 from src.index.reader import get_index_stats, get_top_industries
 from src.index.schema import init_db
 from src.index.vector_store import get_vector_count
 from src.query.answerer import answer_from_chunks, answer_question
-from src.query.retriever import load_docs_by_gcs_names, retrieve_relevant_docs
+from src.query.retriever import (
+    has_chunks, load_docs_by_gcs_names, retrieve_relevant_chunks,
+    retrieve_relevant_docs,
+)
 from src.storage.gcs_client import GCSClient
 
 _gcs = GCSClient()
@@ -66,6 +70,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Could not download DB from GCS: {e}")
     init_db()
+    init_chunks_db()
     yield
 
 
@@ -228,6 +233,7 @@ def stats():
         "failed": s["failed"],
         "industries": s["industries"],
         "embeddings": get_vector_count(),
+        "chunks": get_chunk_count(),
     }
 
 
@@ -259,18 +265,112 @@ async def query_stream(req: QueryRequest):
             # Step 1: search
             yield sse({"type": "searching"})
 
+            industry_filter = req.industry_filter
+            if isinstance(industry_filter, str):
+                industry_filter = [industry_filter] if industry_filter.lower() not in ("all", "any", "") else None
+            elif isinstance(industry_filter, list):
+                industry_filter = [f for f in industry_filter if f.lower() not in ("all", "any", "")] or None
+
+            # ── Chunk-level path (preferred when chunk index is populated) ────
+            if has_chunks() and not req.pinned_gcs_names:
+                selected_chunks = await loop.run_in_executor(
+                    None,
+                    lambda: retrieve_relevant_chunks(
+                        question=req.question,
+                        industry_filter=industry_filter,
+                        max_chunks=req.max_docs * 2,
+                    ),
+                )
+
+                if selected_chunks:
+                    # Synthetic "loading" events — one per unique doc
+                    unique_docs: dict[str, dict] = {}
+                    for c in selected_chunks:
+                        if c.gcs_name not in unique_docs:
+                            unique_docs[c.gcs_name] = {"name": c.doc_name, "industry": ""}
+                    yield sse({"type": "found", "total": len(unique_docs)})
+                    for info in unique_docs.values():
+                        yield sse({"type": "loading", "doc": info})
+
+                    yield sse({"type": "answering"})
+                    doc_chunks = [(c.doc_name, c.chunk_text) for c in selected_chunks]
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda: answer_from_chunks(question=req.question, all_chunks=doc_chunks),
+                    )
+
+                    # Cache for follow-up
+                    ctx_key = "|".join(sorted({c.gcs_name for c in selected_chunks}))
+                    context_id = _make_context_id(ctx_key.split("|")) if ctx_key else None
+                    if context_id:
+                        _cache_chunks(context_id, doc_chunks)
+
+                    # Build sources from unique docs in the selected chunks
+                    seen_sources: list[str] = []
+                    for c in selected_chunks:
+                        if c.doc_name not in seen_sources:
+                            seen_sources.append(c.doc_name)
+
+                    sources = []
+                    for doc_name in result.sources:
+                        chunk = next((c for c in selected_chunks if c.doc_name == doc_name), None)
+                        url = None
+                        if chunk:
+                            try:
+                                url = _gcs.get_signed_url(chunk.gcs_name)
+                            except Exception:
+                                pass
+                        sources.append({
+                            "gcs_name": chunk.gcs_name if chunk else "",
+                            "name": doc_name,
+                            "industry": "",
+                            "topics": [],
+                            "url": url,
+                        })
+
+                    yield sse({"type": "answer", "answer": result.answer, "sources": sources,
+                               "source_insights": result.source_insights, "context_id": context_id})
+                    return
+
+            # ── Document-level fallback path ──────────────────────────────────
             if req.pinned_gcs_names:
+                # Pinned doc path: load chunks from DB if available, else download PDF
+                if has_chunks():
+                    selected_chunks = await loop.run_in_executor(
+                        None,
+                        lambda: retrieve_relevant_chunks(
+                            question=req.question,
+                            pinned_gcs_names=req.pinned_gcs_names,
+                            max_chunks=req.max_docs * 3,
+                        ),
+                    )
+                    if selected_chunks:
+                        yield sse({"type": "found", "total": len(req.pinned_gcs_names)})
+                        for gcs_name in req.pinned_gcs_names:
+                            yield sse({"type": "loading", "doc": {"name": gcs_name, "industry": ""}})
+                        yield sse({"type": "answering"})
+                        doc_chunks = [(c.doc_name, c.chunk_text) for c in selected_chunks]
+                        result = await loop.run_in_executor(
+                            None,
+                            lambda: answer_from_chunks(question=req.question, all_chunks=doc_chunks),
+                        )
+                        context_id = _make_context_id(req.pinned_gcs_names)
+                        _cache_chunks(context_id, doc_chunks)
+                        sources = [{"gcs_name": gn, "name": gn, "industry": "", "topics": [], "url": None}
+                                   for gn in req.pinned_gcs_names]
+                        yield sse({"type": "answer", "answer": result.answer, "sources": sources,
+                                   "source_insights": result.source_insights, "context_id": context_id})
+                        return
+
+                # Fall back to downloading the PDF
+                from src.index.reader import get_docs_by_gcs_names
                 rows = get_docs_by_gcs_names(req.pinned_gcs_names)
                 doc_data = [{"gcs_name": r.gcs_name, "doc_name": r.doc_name, "industry": r.industry,
-                             "market_scope": r.market_scope, "topics": r.topics, "forecasts": r.forecasts, "score": 1.0}
-                            for r in rows]
+                             "market_scope": r.market_scope, "topics": r.topics, "forecasts": r.forecasts,
+                             "score": 1.0} for r in rows]
             else:
-                industry_filter = req.industry_filter
-                if isinstance(industry_filter, str):
-                    industry_filter = [industry_filter] if industry_filter.lower() not in ("all", "any", "") else None
-                elif isinstance(industry_filter, list):
-                    industry_filter = [f for f in industry_filter if f.lower() not in ("all", "any", "")] or None
-
+                from src.index.reader import search_by_text
+                from src.index.vector_store import semantic_search
                 if get_vector_count() > 0:
                     raw = await loop.run_in_executor(
                         None, lambda: semantic_search(query=req.question, n_results=req.max_docs * 2)
@@ -292,7 +392,6 @@ async def query_stream(req: QueryRequest):
             total = len(doc_data)
             yield sse({"type": "found", "total": total})
 
-            # Step 2: load each doc
             docs: list[RetrievedDoc] = []
             for i, r in enumerate(doc_data):
                 yield sse({"type": "loading", "index": i, "total": total,
@@ -309,7 +408,6 @@ async def query_stream(req: QueryRequest):
                 except Exception as e:
                     logger.warning(f"Could not load {r['gcs_name']}: {e}")
 
-            # Step 3: answer
             yield sse({"type": "answering"})
             result = await loop.run_in_executor(
                 None, lambda: answer_question(question=req.question, docs=docs)

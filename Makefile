@@ -1,4 +1,4 @@
-.PHONY: setup parse watch ui api dev test reindex migrate push-db
+.PHONY: setup parse watch ui api dev test reindex migrate rechunk push-db
 
 setup:
 	pip3 install -r requirements.txt
@@ -25,6 +25,12 @@ dev:
 
 migrate:
 	python3 -c "from src.index.schema import migrate_db; migrate_db()"
+
+rechunk:
+	python3 scripts/rechunk.py
+
+rechunk-all:
+	python3 scripts/rechunk.py --all
 
 reindex:
 	python3 scripts/reindex.py --all
